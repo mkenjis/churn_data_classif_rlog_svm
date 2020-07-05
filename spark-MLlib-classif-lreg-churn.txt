@@ -1,0 +1,141 @@
+
+val rdd = sc.textFile("churn/churn_noheader.csv").map( x => x.split(","))
+
+val rdd1 = rdd.map( x => x.slice(3,x.size))
+
+def oneHotEncColumns(rddx: org.apache.spark.rdd.RDD[Array[String]], idx: Int):org.apache.spark.rdd.RDD[Array[Double]] = {
+  val categories = rddx.map(r => r(idx)).distinct.zipWithIndex.collect.toMap
+  val numCategories = categories.size
+  val vetcateg = rddx.map(r => {
+      val categoryIdx = categories(r(idx)).toInt
+      val categoryFeatures = Array.ofDim[Double](numCategories)
+      categoryFeatures(categoryIdx) = 1.0
+      categoryFeatures
+  })
+  vetcateg
+}
+
+def mergeArray(rddx: org.apache.spark.rdd.RDD[Array[String]], idx: Int*):org.apache.spark.rdd.RDD[Array[Double]] = {
+  var i = 0
+  var arr1 = oneHotEncColumns(rddx,idx(i))
+  for (j <- 1 until idx.size) {
+    var arr2 = oneHotEncColumns(rddx,idx(j))
+    var flt1 = arr1.zip(arr2).map(x => (x._1.toList ++ x._2.toList).toArray)
+    arr1 = flt1
+  }
+  arr1
+}
+
+val concat = mergeArray(rdd1,1,2)
+
+val rdd2 = rdd1.map( x => Array(x(0).toDouble,x(3).toDouble,x(4).toDouble,x(5).toDouble,x(6).toDouble,x(7).toDouble,x(8).toDouble,x(9).toDouble,x(10).toDouble))
+
+val vect = concat.zip(rdd2).map(x => (x._1.toList ++ x._2.toList).toArray)
+
+import org.apache.spark.mllib.linalg.Vectors
+import org.apache.spark.mllib.regression.LabeledPoint
+
+val data = vect.map(r => {
+  val arr_size = r.size
+  val l = r(arr_size-1)
+  val f = r.slice(0,arr_size-2)
+  LabeledPoint(l, Vectors.dense(f))
+})
+
+data.cache
+
+val sets = data.randomSplit(Array(0.8,0.2))
+val trainSet = sets(0)
+val testSet = sets(1)
+
+---- MLlib logistic regression --------------
+import org.apache.spark.mllib.classification.LogisticRegressionWithSGD
+val numIterations = 100
+val model = LogisticRegressionWithSGD.train(trainSet, numIterations)
+
+val validPredicts = testSet.map(x => (model.predict(x.features),x.label))
+
+import org.apache.spark.mllib.evaluation.BinaryClassificationMetrics
+val metrics = new BinaryClassificationMetrics(validPredicts)
+validPredicts.filter(x => x._1 == x._2).count  // 934
+validPredicts.count                            // 2024
+model.getClass.getSimpleName
+metrics.areaUnderPR   // 0.23972009955743792
+metrics.areaUnderROC  // 0.5635112088092574
+
+---- MLlib SVM regression --------------
+
+import org.apache.spark.mllib.classification.SVMWithSGD
+val numIterations = 100
+val model = SVMWithSGD.train(trainSet, numIterations)
+
+val validPredicts = testSet.map(x => (model.predict(x.features),x.label))
+
+import org.apache.spark.mllib.evaluation.BinaryClassificationMetrics
+val metrics = new BinaryClassificationMetrics(validPredicts)
+validPredicts.filter(x => x._1 == x._2).count  // 1597
+validPredicts.count                            // 2024
+model.getClass.getSimpleName
+metrics.areaUnderPR   // 0.21096837944664032
+metrics.areaUnderROC  // 0.5
+
+---- MLlib Maive Bayes regression --------------
+
+import org.apache.spark.mllib.classification.NaiveBayes
+val model = NaiveBayes.train(trainSet)
+
+val validPredicts = testSet.map(x => (model.predict(x.features),x.label))
+
+import org.apache.spark.mllib.evaluation.BinaryClassificationMetrics
+val metrics = new BinaryClassificationMetrics(validPredicts)
+validPredicts.filter(x => x._1 == x._2).count  // 1009
+validPredicts.count                            // 2024
+model.getClass.getSimpleName
+metrics.areaUnderPR   //  0.2390488368693554
+metrics.areaUnderROC  //  0.5578250496026653
+
+
+----- Standardizing features ------------------------------
+----- with MLlib logistic regression ----------------------
+import org.apache.spark.mllib.feature.StandardScaler
+val vectors = trainSet.map(lp => lp.features)
+val scaler = new StandardScaler(withMean = true, withStd = true).fit(vectors)
+val trainScaled = trainSet.map(lp => LabeledPoint(lp.label,scaler.transform(lp.features)))
+
+import org.apache.spark.mllib.classification.LogisticRegressionWithSGD
+val numIterations = 100
+val model = LogisticRegressionWithSGD.train(trainScaled, numIterations)
+
+val validPredicts = testSet.map(x => (model.predict(scaler.transform(x.features)),x.label))
+
+import org.apache.spark.mllib.evaluation.BinaryClassificationMetrics
+val metrics = new BinaryClassificationMetrics(validPredicts)
+validPredicts.filter(x => x._1 == x._2).count  // 1310
+validPredicts.count                            // 2024
+model.getClass.getSimpleName
+metrics.areaUnderPR    // 0.33727596007167004
+metrics.areaUnderROC   // 0.7018208907509543
+
+----- with MLlib SVM regression ----------------------
+import org.apache.spark.mllib.feature.StandardScaler
+val vectors = trainSet.map(lp => lp.features)
+val scaler = new StandardScaler(withMean = true, withStd = true).fit(vectors)
+val trainScaled = trainSet.map(lp => LabeledPoint(lp.label,scaler.transform(lp.features)))
+
+import org.apache.spark.mllib.classification.SVMWithSGD
+val numIterations = 100
+val model = SVMWithSGD.train(trainScaled, numIterations)
+
+val validPredicts = testSet.map(x => (model.predict(scaler.transform(x.features)),x.label))
+
+import org.apache.spark.mllib.evaluation.BinaryClassificationMetrics
+val metrics = new BinaryClassificationMetrics(validPredicts)
+validPredicts.filter(x => x._1 == x._2).count  // 1344
+validPredicts.count                            // 2024
+model.getClass.getSimpleName
+metrics.areaUnderPR    // 0.34613134919118954
+metrics.areaUnderROC   // 0.7073186111546973
+
+----- with Maive Bayes regression ----------------------
+
+not possible because standardization produces negative values
