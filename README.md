@@ -1,5 +1,7 @@
 # churn_data_regression
 churndata regression using MLlib
+- Source : Kaggle Dataset
+- URL : https://www.kaggle.com/shivan118/churn-modeling-dataset
 
 # Purpose: 
 - use churn dataset to train different classification regression models from MLlib.

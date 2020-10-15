@@ -1,7 +1,10 @@
+---- Feature extraction & Data Munging --------------
 
 val rdd = sc.textFile("churn/churn_noheader.csv").map( x => x.split(","))
 
 val rdd1 = rdd.map( x => x.slice(3,x.size))
+
+---- Convert rdd1(1) and rdd(2) to 1-to-k enconding vectors
 
 def oneHotEncColumns(rddx: org.apache.spark.rdd.RDD[Array[String]], idx: Int):org.apache.spark.rdd.RDD[Array[Double]] = {
   val categories = rddx.map(r => r(idx)).distinct.zipWithIndex.collect.toMap
@@ -35,10 +38,10 @@ val vect = concat.zip(rdd2).map(x => (x._1.toList ++ x._2.toList).toArray)
 import org.apache.spark.mllib.linalg.Vectors
 import org.apache.spark.mllib.regression.LabeledPoint
 
-val data = vect.map(r => {
-  val arr_size = r.size
-  val l = r(arr_size-1)
-  val f = r.slice(0,arr_size-2)
+val data = vect.map(x => {
+  val arr_size = x.size - 1
+  val l = x(arr_size)
+  val f = x.slice(0,arr_size - 1)
   LabeledPoint(l, Vectors.dense(f))
 })
 
@@ -49,6 +52,7 @@ val trainSet = sets(0)
 val testSet = sets(1)
 
 ---- MLlib logistic regression --------------
+
 import org.apache.spark.mllib.classification.LogisticRegressionWithSGD
 val numIterations = 100
 val model = LogisticRegressionWithSGD.train(trainSet, numIterations)
@@ -79,28 +83,14 @@ model.getClass.getSimpleName
 metrics.areaUnderPR   // 0.21096837944664032
 metrics.areaUnderROC  // 0.5
 
----- MLlib Maive Bayes regression --------------
-
-import org.apache.spark.mllib.classification.NaiveBayes
-val model = NaiveBayes.train(trainSet)
-
-val validPredicts = testSet.map(x => (model.predict(x.features),x.label))
-
-import org.apache.spark.mllib.evaluation.BinaryClassificationMetrics
-val metrics = new BinaryClassificationMetrics(validPredicts)
-validPredicts.filter(x => x._1 == x._2).count  // 1009
-validPredicts.count                            // 2024
-model.getClass.getSimpleName
-metrics.areaUnderPR   //  0.2390488368693554
-metrics.areaUnderROC  //  0.5578250496026653
-
-
 ----- Standardizing features ------------------------------
------ with MLlib logistic regression ----------------------
+
 import org.apache.spark.mllib.feature.StandardScaler
 val vectors = trainSet.map(lp => lp.features)
 val scaler = new StandardScaler(withMean = true, withStd = true).fit(vectors)
 val trainScaled = trainSet.map(lp => LabeledPoint(lp.label,scaler.transform(lp.features)))
+
+----- with MLlib logistic regression ----------------------
 
 import org.apache.spark.mllib.classification.LogisticRegressionWithSGD
 val numIterations = 100
@@ -117,10 +107,6 @@ metrics.areaUnderPR    // 0.33727596007167004
 metrics.areaUnderROC   // 0.7018208907509543
 
 ----- with MLlib SVM regression ----------------------
-import org.apache.spark.mllib.feature.StandardScaler
-val vectors = trainSet.map(lp => lp.features)
-val scaler = new StandardScaler(withMean = true, withStd = true).fit(vectors)
-val trainScaled = trainSet.map(lp => LabeledPoint(lp.label,scaler.transform(lp.features)))
 
 import org.apache.spark.mllib.classification.SVMWithSGD
 val numIterations = 100
@@ -135,7 +121,3 @@ validPredicts.count                            // 2024
 model.getClass.getSimpleName
 metrics.areaUnderPR    // 0.34613134919118954
 metrics.areaUnderROC   // 0.7073186111546973
-
------ with Maive Bayes regression ----------------------
-
-not possible because standardization produces negative values
