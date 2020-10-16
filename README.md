@@ -1,4 +1,4 @@
-# churn_data_regression
+# churn_data_classif_rlog_svm
 churndata regression using MLlib
 - Source : Kaggle Dataset
 - URL : https://www.kaggle.com/shivan118/churn-modeling-dataset
